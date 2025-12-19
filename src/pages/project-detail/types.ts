@@ -61,6 +61,8 @@ export interface EventLogViewerProps {
   searchLoading: boolean;
   searchResults: SearchResponse | null;
   snippetMap?: Map<number, string>;
+  isSearchMode?: boolean;
+  searchEventsLoading?: boolean;
 }
 
 export interface JsonViewerProps {

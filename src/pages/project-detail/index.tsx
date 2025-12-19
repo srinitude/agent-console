@@ -54,6 +54,8 @@ export function ProjectDetailPage({ projectPath }: ProjectDetailPageProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResponse | null>(null);
   const [searchLoading, setSearchLoading] = useState(false);
+  const [searchEvents, setSearchEvents] = useState<SessionEvent[]>([]);
+  const [searchEventsLoading, setSearchEventsLoading] = useState(false);
 
   // Load sessions and active status on mount
   useEffect(() => {
@@ -269,30 +271,52 @@ export function ProjectDetailPage({ projectPath }: ProjectDetailPageProps) {
     setEventsHasMore(false);
     setSearchQuery("");
     setSearchResults(null);
+    setSearchEvents([]);
   }, [selectedSessionId]);
 
   // Debounced search effect
   useEffect(() => {
     if (!searchQuery.trim() || !selectedSessionId) {
       setSearchResults(null);
+      setSearchEvents([]);
       return;
     }
 
     const timer = setTimeout(async () => {
       setSearchLoading(true);
+      setSearchEventsLoading(true);
       try {
+        // Step 1: Get search matches
         const response = await invoke<SearchResponse>("search_session_events", {
           projectPath,
           sessionId: selectedSessionId,
           query: searchQuery,
-          maxResults: 10000,
+          maxResults: 1000, // Cap for full event loading
         });
         setSearchResults(response);
+
+        // Step 2: Fetch full events for matches
+        if (response.matches.length > 0) {
+          // Sort by sequence descending (newest first) for consistent UX
+          const sortedMatches = [...response.matches].sort((a, b) => b.sequence - a.sequence);
+          const offsets: [number, number][] = sortedMatches.map(m => [m.sequence, m.byteOffset]);
+
+          const fullEvents = await invoke<SessionEvent[]>("get_events_by_offsets", {
+            projectPath,
+            sessionId: selectedSessionId,
+            offsets,
+          });
+          setSearchEvents(fullEvents);
+        } else {
+          setSearchEvents([]);
+        }
       } catch (err) {
         console.error("Search failed:", err);
         setSearchResults(null);
+        setSearchEvents([]);
       } finally {
         setSearchLoading(false);
+        setSearchEventsLoading(false);
       }
     }, 300);
 
@@ -300,8 +324,12 @@ export function ProjectDetailPage({ projectPath }: ProjectDetailPageProps) {
   }, [projectPath, selectedSessionId, searchQuery]);
 
   // Filter or highlight events based on current filter, mode, and search
-  const { filteredEvents, highlightedIndices } = useMemo(() => {
-    // Build search match set from backend results
+  const { filteredEvents, highlightedIndices, isSearchMode } = useMemo(() => {
+    // When we have search results with loaded events, use those as the base
+    const isSearchMode = searchEvents.length > 0;
+    const baseEvents = isSearchMode ? searchEvents : events;
+
+    // Build search match set from backend results (for highlighting)
     const searchMatchSet = searchResults
       ? new Set(searchResults.matches.map((m) => m.sequence))
       : null;
@@ -333,8 +361,9 @@ export function ProjectDetailPage({ projectPath }: ProjectDetailPageProps) {
         }
       }
 
-      // Check search filter (if active)
-      if (searchMatchSet && !searchMatchSet.has(e.sequence)) {
+      // In search mode, all events already match search (they came from search)
+      // In normal mode, apply search filter if present
+      if (!isSearchMode && searchMatchSet && !searchMatchSet.has(e.sequence)) {
         return false;
       }
 
@@ -343,28 +372,30 @@ export function ProjectDetailPage({ projectPath }: ProjectDetailPageProps) {
 
     if (eventFilterMode === "filter") {
       // Filter mode: return only matching events
-      const noFiltersActive = eventFilter === "all" && !searchMatchSet;
+      const noFiltersActive = eventFilter === "all" && !isSearchMode && !searchMatchSet;
       return {
-        filteredEvents: noFiltersActive ? events : events.filter(matchesFilter),
+        filteredEvents: noFiltersActive ? baseEvents : baseEvents.filter(matchesFilter),
         highlightedIndices: undefined,
+        isSearchMode,
       };
     } else {
       // Highlight mode: return all events, but track which indices to highlight
       const highlighted = new Set<number>();
       const hasActiveFilter = eventFilter !== "all" || searchMatchSet;
       if (hasActiveFilter) {
-        events.forEach((e, i) => {
+        baseEvents.forEach((e, i) => {
           if (matchesFilter(e)) {
             highlighted.add(i);
           }
         });
       }
       return {
-        filteredEvents: events,
+        filteredEvents: baseEvents,
         highlightedIndices: highlighted.size > 0 ? highlighted : undefined,
+        isSearchMode,
       };
     }
-  }, [events, eventFilter, eventFilterMode, searchResults]);
+  }, [events, searchEvents, eventFilter, eventFilterMode, searchResults]);
 
   // Build snippet lookup map from search results
   const snippetMap = useMemo(() => {
@@ -527,6 +558,8 @@ export function ProjectDetailPage({ projectPath }: ProjectDetailPageProps) {
             searchLoading={searchLoading}
             searchResults={searchResults}
             snippetMap={snippetMap}
+            isSearchMode={isSearchMode}
+            searchEventsLoading={searchEventsLoading}
           />
         ) : activeTab === "edits" ? (
           <EditViewer

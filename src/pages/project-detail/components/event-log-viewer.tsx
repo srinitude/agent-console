@@ -47,6 +47,8 @@ export function EventLogViewer({
   searchLoading,
   searchResults,
   snippetMap,
+  isSearchMode,
+  searchEventsLoading,
 }: EventLogViewerProps) {
   const listRef = useRef<ListImperativeAPI>(null);
   const subagentListRef = useRef<ListImperativeAPI>(null);
@@ -85,14 +87,15 @@ export function EventLogViewer({
       _visibleRows: { startIndex: number; stopIndex: number },
       allRows: { startIndex: number; stopIndex: number }
     ) => {
-      if (loadingMore || !hasMore) return;
+      // Don't load more in search mode - all results already loaded
+      if (isSearchMode || loadingMore || !hasMore) return;
 
       // Load more when within 5 rows of the end
       if (allRows.stopIndex >= events.length - 5) {
         onLoadMore();
       }
     },
-    [loadingMore, hasMore, events.length, onLoadMore]
+    [isSearchMode, loadingMore, hasMore, events.length, onLoadMore]
   );
 
   // Load raw JSON when dialog opens
@@ -462,10 +465,12 @@ export function EventLogViewer({
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <span className="text-xs text-muted-foreground whitespace-nowrap">
-              {events.length.toLocaleString()}
-              {totalCount > events.length && ` / ${totalCount.toLocaleString()}`} events
+              {isSearchMode
+                ? `${events.length.toLocaleString()} search results`
+                : `${events.length.toLocaleString()}${totalCount > events.length ? ` / ${totalCount.toLocaleString()}` : ""} events`
+              }
             </span>
-            {loadingMore && (
+            {(loadingMore || searchEventsLoading) && (
               <IconLoader2 className="size-3 animate-spin text-muted-foreground" />
             )}
           </div>

@@ -1177,6 +1177,58 @@ pub fn get_event_raw_json(project_path: &str, session_id: &str, byte_offset: u64
     Some(line)
 }
 
+/// Get full SessionEvent objects for specific byte offsets.
+/// Used to fetch search match results efficiently.
+/// Returns events in the order provided (typically by sequence descending for newest-first).
+pub fn get_events_by_offsets(
+    project_path: &str,
+    session_id: &str,
+    offsets: Vec<(u32, u64)>, // (sequence, byte_offset) pairs
+) -> Vec<SessionEvent> {
+    let session_file = match get_session_file_path(project_path, session_id) {
+        Some(p) => p,
+        None => return Vec::new(),
+    };
+
+    let mut file = match File::open(&session_file) {
+        Ok(f) => f,
+        Err(_) => return Vec::new(),
+    };
+
+    use std::io::{Seek, SeekFrom};
+
+    let mut events = Vec::with_capacity(offsets.len());
+
+    for (sequence, byte_offset) in offsets {
+        // Seek to offset
+        if file.seek(SeekFrom::Start(byte_offset)).is_err() {
+            continue;
+        }
+
+        // Read the line
+        let mut reader = BufReader::new(&file);
+        let mut line = String::new();
+        if reader.read_line(&mut line).is_err() {
+            continue;
+        }
+
+        // Remove trailing newline
+        if line.ends_with('\n') {
+            line.pop();
+        }
+        if line.ends_with('\r') {
+            line.pop();
+        }
+
+        // Parse into SessionEvent
+        if let Some(event) = parse_session_event(&line, sequence, byte_offset) {
+            events.push(event);
+        }
+    }
+
+    events
+}
+
 /// Get paginated events from a sub-agent session for the log viewer.
 /// Events are returned in descending order (newest first).
 pub fn get_subagent_events(

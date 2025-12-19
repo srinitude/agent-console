@@ -142,6 +142,17 @@ fn search_subagent_events(
     search::search_subagent(&project_path, &agent_id, &query, max_results)
 }
 
+/// Get full events for specific byte offsets (for search results).
+/// Takes an array of [sequence, byteOffset] tuples and returns full SessionEvent objects.
+#[tauri::command]
+fn get_events_by_offsets(
+    project_path: String,
+    session_id: String,
+    offsets: Vec<(u32, u64)>,
+) -> Vec<claude_code::SessionEvent> {
+    claude_code::get_events_by_offsets(&project_path, &session_id, offsets)
+}
+
 /// Start watching a session file for changes.
 #[tauri::command]
 fn watch_session(
@@ -281,6 +292,7 @@ pub fn run() {
             get_subagent_raw_json,
             search_session_events,
             search_subagent_events,
+            get_events_by_offsets,
             watch_session,
             unwatch_session,
             watch_subagent,
