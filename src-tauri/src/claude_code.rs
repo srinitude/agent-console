@@ -242,7 +242,7 @@ fn process_project_dir(dir_path: &Path) -> Option<Project> {
 /// Convert a project path to its encoded directory name.
 /// e.g., "/Users/ramos/project" -> "-Users-ramos-project"
 fn encode_project_path(project_path: &str) -> String {
-    project_path.replace('/', "-")
+    project_path.replace('/', "-").replace(' ', "-")
 }
 
 /// Get sessions for a specific project (lightweight - no file content parsing).
@@ -365,20 +365,6 @@ pub struct FileDiff {
     pub sequence: u32,
     /// Timestamp of the change (ISO 8601)
     pub timestamp: Option<String>,
-}
-
-/// All diffs for a specific file.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct FileWithDiffs {
-    /// Absolute file path
-    pub file_path: String,
-    /// Relative path from project root
-    pub relative_path: String,
-    /// Type of edit
-    pub edit_type: FileEditType,
-    /// All diffs in order
-    pub diffs: Vec<FileDiff>,
 }
 
 /// Internal struct for parsing JSONL entries to extract tool_use.

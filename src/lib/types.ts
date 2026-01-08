@@ -57,7 +57,9 @@ export type TerminalType =
   | "windows-terminal"
   | "gnome-terminal"
   | "konsole"
-  | "alacritty";
+  | "alacritty"
+  | "warp"
+  | "cursor";
 
 export const terminalDisplayNames: Record<TerminalType, string> = {
   "macos-terminal": "Terminal",
@@ -67,6 +69,8 @@ export const terminalDisplayNames: Record<TerminalType, string> = {
   "gnome-terminal": "GNOME Terminal",
   konsole: "Konsole",
   alacritty: "Alacritty",
+  warp: "Warp",
+  cursor: "Cursor",
 };
 
 // File edit types - matches Rust structs in claude_code.rs

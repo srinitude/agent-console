@@ -28,6 +28,10 @@ pub enum TerminalType {
     Konsole,
     /// Alacritty
     Alacritty,
+    /// Warp
+    Warp,
+    /// Cursor
+    Cursor,
 }
 
 /// Get available terminals for the current platform.
@@ -49,6 +53,16 @@ pub fn get_available_terminals() -> Vec<TerminalType> {
         // Check if Alacritty is installed
         if std::path::Path::new("/Applications/Alacritty.app").exists() {
             terminals.push(TerminalType::Alacritty);
+        }
+
+        // Check if Warp is installed
+        if std::path::Path::new("/Applications/Warp.app").exists() {
+            terminals.push(TerminalType::Warp);
+        }
+
+        // Check if Cursor is installed
+        if std::path::Path::new("/Applications/Cursor.app").exists() {
+            terminals.push(TerminalType::Cursor);
         }
 
         terminals
@@ -93,6 +107,24 @@ pub fn get_available_terminals() -> Vec<TerminalType> {
             .unwrap_or(false)
         {
             terminals.push(TerminalType::Ghostty);
+        }
+
+        if Command::new("which")
+            .arg("warp-terminal")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+        {
+            terminals.push(TerminalType::Warp);
+        }
+
+        if Command::new("which")
+            .arg("cursor")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+        {
+            terminals.push(TerminalType::Cursor);
         }
 
         terminals
@@ -165,49 +197,39 @@ fn launch_terminal_macos(
                 .map_err(|e| format!("Failed to launch Terminal.app: {}", e))?;
         }
         TerminalType::Ghostty => {
-            // Ghostty on macOS: open new window, copy command to clipboard, paste it
-            // This avoids keystroke escaping issues with special characters in paths
-
-            // First, copy command to clipboard
+            // Ghostty supports launching with a command via CLI
+            Command::new("open")
+                .arg("-na")
+                .arg("Ghostty")
+                .arg("--args")
+                .arg("-e")
+                .arg("sh")
+                .arg("-c")
+                .arg(&full_command)
+                .spawn()
+                .map_err(|e| format!("Failed to launch Ghostty: {}", e))?;
+        }
+        TerminalType::Iterm2 => {
+            // Copy command to clipboard first for reliable execution
             Command::new("sh")
                 .arg("-c")
                 .arg(format!("printf '%s' {} | pbcopy", shell_escape(&full_command)))
                 .output()
                 .map_err(|e| format!("Failed to copy to clipboard: {}", e))?;
 
-            // Then activate Ghostty, open new window, and paste
-            let script = r#"tell application "Ghostty"
+            // Create window and paste command
+            let script = r#"tell application "iTerm"
                 activate
-            end tell
-            delay 0.3
-            tell application "System Events"
-                tell process "Ghostty"
-                    keystroke "n" using command down
+                create window with default profile
+                tell current session of current window
                     delay 0.2
-                    keystroke "v" using command down
-                    delay 0.1
-                    keystroke return
+                    write text (the clipboard)
                 end tell
             end tell"#;
 
             Command::new("osascript")
                 .arg("-e")
                 .arg(script)
-                .spawn()
-                .map_err(|e| format!("Failed to launch Ghostty: {}", e))?;
-        }
-        TerminalType::Iterm2 => {
-            let script = format!(
-                r#"tell application "iTerm"
-                    activate
-                    create window with default profile command "{}"
-                end tell"#,
-                full_command.replace('"', "\\\"")
-            );
-
-            Command::new("osascript")
-                .arg("-e")
-                .arg(&script)
                 .spawn()
                 .map_err(|e| format!("Failed to launch iTerm2: {}", e))?;
         }
@@ -222,6 +244,82 @@ fn launch_terminal_macos(
                 .arg(&full_command)
                 .spawn()
                 .map_err(|e| format!("Failed to launch Alacritty: {}", e))?;
+        }
+        TerminalType::Warp => {
+            // Use Warp's URL scheme to open at the correct directory,
+            // then paste the command via AppleScript
+
+            // Copy command to clipboard first
+            Command::new("sh")
+                .arg("-c")
+                .arg(format!("printf '%s' {} | pbcopy", shell_escape(command)))
+                .output()
+                .map_err(|e| format!("Failed to copy to clipboard: {}", e))?;
+
+            // URL-encode the path for the warp:// scheme
+            let encoded_path = urlencoding::encode(cwd);
+            let warp_url = format!("warp://action/new_window?path={}", encoded_path);
+
+            // Open Warp at the correct directory using URL scheme
+            Command::new("open")
+                .arg(&warp_url)
+                .spawn()
+                .map_err(|e| format!("Failed to launch Warp: {}", e))?;
+
+            // Give Warp time to open and focus the new window
+            std::thread::sleep(std::time::Duration::from_millis(800));
+
+            // Paste command and execute using AppleScript
+            let script = r#"tell application "System Events"
+                tell process "Warp"
+                    keystroke "v" using command down
+                    delay 0.1
+                    keystroke return
+                end tell
+            end tell"#;
+
+            Command::new("osascript")
+                .arg("-e")
+                .arg(script)
+                .spawn()
+                .map_err(|e| format!("Failed to paste command in Warp: {}", e))?;
+        }
+        TerminalType::Cursor => {
+            // Cursor is an IDE with an integrated terminal
+            // Open project in Cursor and use the terminal
+            Command::new("open")
+                .arg("-a")
+                .arg("Cursor")
+                .arg(cwd)
+                .spawn()
+                .map_err(|e| format!("Failed to launch Cursor: {}", e))?;
+
+            // Copy command to clipboard first
+            Command::new("sh")
+                .arg("-c")
+                .arg(format!("printf '%s' {} | pbcopy", shell_escape(&full_command)))
+                .output()
+                .map_err(|e| format!("Failed to copy to clipboard: {}", e))?;
+
+            // Give Cursor time to open
+            std::thread::sleep(std::time::Duration::from_millis(1000));
+
+            // Open integrated terminal and paste command
+            let script = r#"tell application "System Events"
+                tell process "Cursor"
+                    keystroke "`" using control down
+                    delay 0.5
+                    keystroke "v" using command down
+                    delay 0.1
+                    keystroke return
+                end tell
+            end tell"#;
+
+            Command::new("osascript")
+                .arg("-e")
+                .arg(script)
+                .spawn()
+                .map_err(|e| format!("Failed to open Cursor terminal: {}", e))?;
         }
         _ => {
             return Err(format!("Terminal {:?} not supported on macOS", terminal));
@@ -275,6 +373,22 @@ fn launch_terminal_linux(
                 .arg(&full_command)
                 .spawn()
                 .map_err(|e| format!("Failed to launch ghostty: {}", e))?;
+        }
+        TerminalType::Warp => {
+            Command::new("warp-terminal")
+                .arg("-e")
+                .arg("sh")
+                .arg("-c")
+                .arg(&full_command)
+                .spawn()
+                .map_err(|e| format!("Failed to launch warp-terminal: {}", e))?;
+        }
+        TerminalType::Cursor => {
+            // Open Cursor at the project directory
+            Command::new("cursor")
+                .arg(cwd)
+                .spawn()
+                .map_err(|e| format!("Failed to launch cursor: {}", e))?;
         }
         _ => {
             return Err(format!("Terminal {:?} not supported on Linux", terminal));

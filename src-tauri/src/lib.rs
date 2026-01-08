@@ -46,6 +46,13 @@ fn launch_claude(
     continue_session: bool,
     yolo_mode: bool,
 ) -> Result<(), String> {
+    // Debug: write to a file to confirm function is called
+    let debug_msg = format!(
+        "launch_claude called: terminal={:?}, path={}, continue={}, yolo={}\n",
+        terminal_type, project_path, continue_session, yolo_mode
+    );
+    let _ = std::fs::write("/tmp/launch_claude_debug.log", &debug_msg);
+
     let mut cmd = String::from("claude");
 
     if continue_session {
@@ -294,7 +301,7 @@ fn get_file_edit_context(
 
     // Get the session file path
     let home = dirs::home_dir().ok_or_else(|| "Cannot find home directory".to_string())?;
-    let encoded_name = project_path.replace('/', "-");
+    let encoded_name = project_path.replace('/', "-").replace(' ', "-");
     let session_file = home
         .join(".claude")
         .join("projects")

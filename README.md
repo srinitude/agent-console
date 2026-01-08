@@ -33,25 +33,24 @@ Visualize [Cupcake](https://github.com/eqtylab/cupcake) policy evaluations with 
 ### Prerequisites
 
 - [Rust](https://rustup.rs/) (stable)
-- [Node.js](https://nodejs.org/) (v18+)
-- [pnpm](https://pnpm.io/)
+- [Bun](https://bun.sh/)
 
 ### Install Dependencies
 
 ```bash
-pnpm install
+bun install
 ```
 
 ### Development
 
 ```bash
-pnpm tauri dev
+bun run tauri dev
 ```
 
 ### Build
 
 ```bash
-pnpm tauri build
+bun run tauri build
 ```
 
 The built app will be in `src-tauri/target/release/bundle/`.

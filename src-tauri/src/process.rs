@@ -126,10 +126,12 @@ fn get_process_cwd_macos(pid: u32) -> Option<String> {
     for line in stdout.lines() {
         if line.contains("cwd") {
             // lsof output format: COMMAND PID USER FD TYPE DEVICE SIZE/OFF NODE NAME
-            // The NAME (last field) is what we want
+            // The NAME field (9th column) can contain spaces, so we can't just split_whitespace
+            // Skip the first 8 fields and join the rest
             let parts: Vec<&str> = line.split_whitespace().collect();
-            if let Some(path) = parts.last() {
-                return Some(path.to_string());
+            if parts.len() >= 9 {
+                // Everything from index 8 onwards is the path (may have spaces)
+                return Some(parts[8..].join(" "));
             }
         }
     }

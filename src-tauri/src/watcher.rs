@@ -91,7 +91,7 @@ impl WatcherState {
 /// Get the session file path for watching.
 fn get_session_file_path(project_path: &str, session_id: &str) -> Option<PathBuf> {
     let home = dirs::home_dir()?;
-    let encoded_name = project_path.replace('/', "-");
+    let encoded_name = project_path.replace('/', "-").replace(' ', "-");
     let session_file = home
         .join(".claude")
         .join("projects")
@@ -280,7 +280,7 @@ pub fn unwatch_session(
 /// Get the sub-agent file path for watching.
 fn get_subagent_file_path(project_path: &str, agent_id: &str) -> Option<PathBuf> {
     let home = dirs::home_dir()?;
-    let encoded_name = project_path.replace('/', "-");
+    let encoded_name = project_path.replace('/', "-").replace(' ', "-");
     let agent_file = home
         .join(".claude")
         .join("projects")

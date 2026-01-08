@@ -80,13 +80,15 @@ export function EditContextView({
       return;
     }
 
+    const byteOffset = selectedEvent.byteOffset;
+
     async function loadRawJson() {
       setRawJsonLoading(true);
       try {
         const json = await invoke<string | null>("get_event_raw_json", {
           projectPath,
           sessionId,
-          byteOffset: selectedEvent.byteOffset,
+          byteOffset,
         });
         setRawJson(json);
       } catch (err) {
