@@ -54,3 +54,49 @@ bun run tauri build
 ```
 
 The built app will be in `src-tauri/target/release/bundle/`.
+
+---
+
+## Testing
+
+The project includes comprehensive test coverage with unit tests, component tests, and end-to-end tests.
+
+### Unit & Component Tests (Vitest)
+
+```bash
+# Run tests once
+bun run test
+
+# Run tests in watch mode
+bun run test:watch
+
+# Run tests with coverage report
+bun run test:coverage
+
+# Run tests with UI
+bun run test:ui
+```
+
+### End-to-End Tests (Playwright)
+
+```bash
+bun run test:e2e
+```
+
+### Rust Tests
+
+```bash
+bun run test:rust
+```
+
+### Type Checking
+
+```bash
+bun run typecheck
+```
+
+---
+
+## CI
+
+GitHub Actions automatically runs all tests on push and pull requests. See `.github/workflows/test.yml` for the workflow configuration.
