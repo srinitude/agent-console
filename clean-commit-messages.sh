@@ -64,13 +64,8 @@ msg=$(cat)
 
 # Process line by line and filter out AI attributions
 echo "$msg" | while IFS= read -r line || [ -n "$line" ]; do
-    # Skip Co-Authored-By lines that mention AI tools or bots
-    if echo "$line" | grep -qiE "^Co-Authored-By:.*\b(claude|anthropic|cursor|warp|copilot|bot|ai|assistant|automated)\b"; then
-        continue
-    fi
-    
-    # Skip Co-authored-by lines (case variations)
-    if echo "$line" | grep -qiE "^Co-authored-by:.*\b(claude|anthropic|cursor|warp|copilot|bot|ai|assistant|automated)\b"; then
+    # Skip Co-Authored-By lines that mention AI tools or bots (case-insensitive)
+    if echo "$line" | grep -qiE "^Co-[Aa]uthored-[Bb]y:.*\b(claude|anthropic|cursor|warp|copilot|bot|ai|assistant|automated)\b"; then
         continue
     fi
     
