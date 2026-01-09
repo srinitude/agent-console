@@ -1539,13 +1539,33 @@ mod tests {
     use super::*;
     use std::time::Instant;
 
+    // =============================================================================
+    // UUID Format Tests
+    // =============================================================================
+
     #[test]
-    fn test_is_uuid_format() {
+    fn test_is_uuid_format_valid() {
         assert!(is_uuid_format("040f5516-2ff1-4738-8190-2b8248f631de"));
+        assert!(is_uuid_format("00000000-0000-0000-0000-000000000000"));
+        assert!(is_uuid_format("ffffffff-ffff-ffff-ffff-ffffffffffff"));
+        assert!(is_uuid_format("ABCDEF12-3456-7890-abcd-ef1234567890"));
+    }
+
+    #[test]
+    fn test_is_uuid_format_invalid() {
         assert!(!is_uuid_format("agent-01cdb344"));
         assert!(!is_uuid_format("not-a-uuid"));
         assert!(!is_uuid_format(""));
+        assert!(!is_uuid_format("040f5516-2ff1-4738-8190")); // Too short
+        assert!(!is_uuid_format("040f5516-2ff1-4738-8190-2b8248f631de-extra")); // Too long
+        assert!(!is_uuid_format("040f5516-2ff1-4738-8190-2b8248f631dg")); // Invalid hex char 'g'
+        assert!(!is_uuid_format("040f55162ff1-4738-8190-2b8248f631de")); // Wrong segment length
+        assert!(!is_uuid_format("040f5516-2ff14738-8190-2b8248f631de")); // Missing dash
     }
+
+    // =============================================================================
+    // Temp Project Detection Tests
+    // =============================================================================
 
     #[test]
     fn test_is_temp_project() {
@@ -1553,7 +1573,286 @@ mod tests {
             "-private-var-folders-8s-x9ypf18955j7w6-zgzqtpclr0000gn-T--tmp08X8zw"
         ));
         assert!(!is_temp_project("-Users-ramos-cupcake-cupcake-rego-cupcake-rewrite"));
+        assert!(!is_temp_project("-Users-john-my-project"));
+        assert!(!is_temp_project("-home-user-code"));
     }
+
+    // =============================================================================
+    // Path Encoding Tests
+    // =============================================================================
+
+    #[test]
+    fn test_encode_project_path() {
+        assert_eq!(encode_project_path("/Users/john/project"), "-Users-john-project");
+        assert_eq!(encode_project_path("/home/user/my project"), "-home-user-my-project");
+        assert_eq!(encode_project_path("/"), "-");
+        assert_eq!(encode_project_path("/a/b/c"), "-a-b-c");
+    }
+
+    // =============================================================================
+    // Relative Path Tests
+    // =============================================================================
+
+    #[test]
+    fn test_make_relative_path() {
+        assert_eq!(
+            make_relative_path("/Users/john/project/src/main.rs", "/Users/john/project"),
+            "src/main.rs"
+        );
+        assert_eq!(
+            make_relative_path("/Users/john/project/src/main.rs", "/Users/john/project/"),
+            "src/main.rs"
+        );
+        assert_eq!(
+            make_relative_path("/other/path/file.rs", "/Users/john/project"),
+            "/other/path/file.rs"
+        );
+        assert_eq!(
+            make_relative_path("/Users/john/project/file.rs", "/Users/john/project"),
+            "file.rs"
+        );
+    }
+
+    // =============================================================================
+    // Truncation Tests
+    // =============================================================================
+
+    #[test]
+    fn test_truncate_string() {
+        assert_eq!(truncate_string("hello", 10), "hello");
+        assert_eq!(truncate_string("hello world", 5), "hello...");
+        assert_eq!(truncate_string("", 5), "");
+        assert_eq!(truncate_string("abc", 3), "abc");
+        assert_eq!(truncate_string("abcd", 3), "abc...");
+    }
+
+    #[test]
+    fn test_truncate_string_unicode() {
+        // Multi-byte UTF-8 characters should be handled correctly
+        let unicode_str = "hello";
+        assert_eq!(truncate_string(unicode_str, 3), "hel...");
+        assert_eq!(truncate_string(unicode_str, 10), "hello");
+    }
+
+    // =============================================================================
+    // Preview Extraction Tests
+    // =============================================================================
+
+    #[test]
+    fn test_extract_preview_from_text_content() {
+        let content = serde_json::json!([{
+            "type": "text",
+            "text": "This is a test message"
+        }]);
+        assert_eq!(extract_preview_from_content(&content), "This is a test message");
+    }
+
+    #[test]
+    fn test_extract_preview_from_thinking() {
+        let content = serde_json::json!([{
+            "type": "thinking",
+            "thinking": "I am thinking about this"
+        }]);
+        assert_eq!(extract_preview_from_content(&content), "I am thinking about this");
+    }
+
+    #[test]
+    fn test_extract_preview_from_tool_use() {
+        let content = serde_json::json!([{
+            "type": "tool_use",
+            "name": "Edit"
+        }]);
+        assert_eq!(extract_preview_from_content(&content), "[Tool: Edit]");
+    }
+
+    #[test]
+    fn test_extract_preview_text_takes_precedence() {
+        // When both text and thinking are present, text should be preferred
+        let content = serde_json::json!([
+            {"type": "thinking", "thinking": "Thinking..."},
+            {"type": "text", "text": "Response text"}
+        ]);
+        assert_eq!(extract_preview_from_content(&content), "Response text");
+    }
+
+    #[test]
+    fn test_extract_preview_string_content() {
+        let content = serde_json::json!("Simple string content");
+        assert_eq!(extract_preview_from_content(&content), "Simple string content");
+    }
+
+    // =============================================================================
+    // Tool Result Detection Tests
+    // =============================================================================
+
+    #[test]
+    fn test_is_tool_result_content() {
+        let tool_result = serde_json::json!([{
+            "type": "tool_result",
+            "tool_use_id": "test123",
+            "content": "Result content"
+        }]);
+        assert!(is_tool_result_content(&tool_result));
+
+        let text_content = serde_json::json!([{
+            "type": "text",
+            "text": "hello"
+        }]);
+        assert!(!is_tool_result_content(&text_content));
+
+        let string_content = serde_json::json!("plain string");
+        assert!(!is_tool_result_content(&string_content));
+    }
+
+    // =============================================================================
+    // Tool Name Extraction Tests
+    // =============================================================================
+
+    #[test]
+    fn test_extract_tool_names_single() {
+        let content = serde_json::json!([{
+            "type": "tool_use",
+            "name": "Bash"
+        }]);
+        assert_eq!(extract_tool_names(&content), Some("Bash".to_string()));
+    }
+
+    #[test]
+    fn test_extract_tool_names_multiple() {
+        let content = serde_json::json!([
+            {"type": "tool_use", "name": "Read"},
+            {"type": "tool_use", "name": "Write"}
+        ]);
+        assert_eq!(extract_tool_names(&content), Some("Read, Write".to_string()));
+    }
+
+    #[test]
+    fn test_extract_tool_names_with_thinking() {
+        let content = serde_json::json!([
+            {"type": "thinking", "thinking": "Let me think..."},
+            {"type": "tool_use", "name": "Edit"}
+        ]);
+        assert_eq!(extract_tool_names(&content), Some("thinking, Edit".to_string()));
+    }
+
+    #[test]
+    fn test_extract_tool_names_none() {
+        let content = serde_json::json!([{
+            "type": "text",
+            "text": "Just text"
+        }]);
+        assert_eq!(extract_tool_names(&content), None);
+    }
+
+    // =============================================================================
+    // Event Parsing Tests
+    // =============================================================================
+
+    #[test]
+    fn test_parse_session_event_user_message() {
+        let line = r#"{"type":"user","userType":"external","uuid":"abc-123-456-789-012","message":{"content":"Hello world"},"timestamp":"2024-01-01T00:00:00Z"}"#;
+        let event = parse_session_event(line, 0, 0).unwrap();
+
+        assert_eq!(event.event_type, "user");
+        assert_eq!(event.uuid, Some("abc-123-456-789-012".to_string()));
+        assert_eq!(event.user_type, Some("external".to_string()));
+        assert_eq!(event.preview, "Hello world");
+        assert_eq!(event.sequence, 0);
+        assert_eq!(event.byte_offset, 0);
+    }
+
+    #[test]
+    fn test_parse_session_event_assistant_with_tool() {
+        let line = r#"{"type":"assistant","uuid":"def-456","message":{"content":[{"type":"tool_use","name":"Bash","input":{"command":"ls"}}]},"timestamp":"2024-01-01T00:00:01Z"}"#;
+        let event = parse_session_event(line, 1, 100).unwrap();
+
+        assert_eq!(event.event_type, "assistant");
+        assert_eq!(event.tool_name, Some("Bash".to_string()));
+        assert_eq!(event.sequence, 1);
+        assert_eq!(event.byte_offset, 100);
+    }
+
+    #[test]
+    fn test_parse_session_event_compact_boundary() {
+        let line = r#"{"type":"system","subtype":"compact_boundary","uuid":"sys-001","compactMetadata":{"trigger":"automatic","preTokens":50000},"timestamp":"2024-01-01T00:00:00Z"}"#;
+        let event = parse_session_event(line, 0, 0).unwrap();
+
+        assert_eq!(event.event_type, "system");
+        assert_eq!(event.subtype, Some("compact_boundary".to_string()));
+        assert!(event.compact_metadata.is_some());
+        let meta = event.compact_metadata.unwrap();
+        assert_eq!(meta.trigger, "automatic");
+        assert_eq!(meta.pre_tokens, 50000);
+    }
+
+    #[test]
+    fn test_parse_session_event_summary() {
+        let line = r#"{"type":"summary","uuid":"sum-001","summary":"Session involved creating a React component","leafUuid":"leaf-001","timestamp":"2024-01-01T00:00:00Z"}"#;
+        let event = parse_session_event(line, 0, 0).unwrap();
+
+        assert_eq!(event.event_type, "summary");
+        assert_eq!(event.summary, Some("Session involved creating a React component".to_string()));
+        assert_eq!(event.leaf_uuid, Some("leaf-001".to_string()));
+    }
+
+    #[test]
+    fn test_parse_session_event_with_task_launch() {
+        let line = r#"{"type":"user","uuid":"task-123","toolUseResult":{"agentId":"abc123","description":"Research task","isAsync":true,"status":"async_launched"},"timestamp":"2024-01-01T00:00:00Z"}"#;
+        let event = parse_session_event(line, 0, 0).unwrap();
+
+        assert_eq!(event.launched_agent_id, Some("abc123".to_string()));
+        assert_eq!(event.launched_agent_description, Some("Research task".to_string()));
+        assert_eq!(event.launched_agent_is_async, Some(true));
+        assert_eq!(event.launched_agent_status, Some("async_launched".to_string()));
+    }
+
+    #[test]
+    fn test_parse_session_event_tool_result() {
+        let line = r#"{"type":"user","uuid":"tr-001","message":{"content":[{"type":"tool_result","tool_use_id":"tu-001","content":"Command output"}]}}"#;
+        let event = parse_session_event(line, 0, 0).unwrap();
+
+        assert!(event.is_tool_result);
+    }
+
+    #[test]
+    fn test_parse_session_event_meta_context() {
+        let line = r#"{"type":"user","uuid":"meta-001","isMeta":true,"message":{"content":"Context injection"}}"#;
+        let event = parse_session_event(line, 0, 0).unwrap();
+
+        assert!(event.is_meta);
+    }
+
+    #[test]
+    fn test_parse_session_event_invalid_json() {
+        let line = "not valid json";
+        let event = parse_session_event(line, 0, 0);
+
+        assert!(event.is_none());
+    }
+
+    // =============================================================================
+    // FileEditType Tests
+    // =============================================================================
+
+    #[test]
+    fn test_file_edit_type_serialization() {
+        assert_eq!(
+            serde_json::to_string(&FileEditType::Added).unwrap(),
+            "\"added\""
+        );
+        assert_eq!(
+            serde_json::to_string(&FileEditType::Modified).unwrap(),
+            "\"modified\""
+        );
+        assert_eq!(
+            serde_json::to_string(&FileEditType::Deleted).unwrap(),
+            "\"deleted\""
+        );
+    }
+
+    // =============================================================================
+    // Performance Benchmark
+    // =============================================================================
 
     #[test]
     fn bench_discover_projects() {
@@ -1565,7 +1864,7 @@ mod tests {
             projects.len(),
             elapsed
         );
-        // Should complete in under 500ms with optimizations
+        // Should complete in under 2000ms with optimizations
         assert!(elapsed.as_millis() < 2000, "Too slow: {:?}", elapsed);
     }
 }

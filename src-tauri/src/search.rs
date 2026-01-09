@@ -457,6 +457,54 @@ fn search_file(file_path: &Path, expr: &SearchExpr, max_results: Option<u32>) ->
 mod tests {
     use super::*;
 
+    // =============================================================================
+    // Tokenization Tests
+    // =============================================================================
+
+    #[test]
+    fn test_tokenize_simple() {
+        let tokens = SearchExpr::tokenize("error warning");
+        assert_eq!(tokens.len(), 2);
+        assert!(matches!(&tokens[0], Token::Term(s) if s == "error"));
+        assert!(matches!(&tokens[1], Token::Term(s) if s == "warning"));
+    }
+
+    #[test]
+    fn test_tokenize_with_operators() {
+        let tokens = SearchExpr::tokenize("error AND warning OR info");
+        assert_eq!(tokens.len(), 5);
+        assert!(matches!(&tokens[0], Token::Term(_)));
+        assert!(matches!(&tokens[1], Token::And));
+        assert!(matches!(&tokens[2], Token::Term(_)));
+        assert!(matches!(&tokens[3], Token::Or));
+        assert!(matches!(&tokens[4], Token::Term(_)));
+    }
+
+    #[test]
+    fn test_tokenize_preserves_lowercase() {
+        let tokens = SearchExpr::tokenize("ERROR Warning");
+        if let Token::Term(ref s) = tokens[0] {
+            assert_eq!(s, "error");
+        }
+        if let Token::Term(ref s) = tokens[1] {
+            assert_eq!(s, "warning");
+        }
+    }
+
+    #[test]
+    fn test_tokenize_and_or_remain_operators() {
+        // AND and OR (uppercase) should be operators
+        let tokens = SearchExpr::tokenize("and AND or OR");
+        assert!(matches!(&tokens[0], Token::Term(s) if s == "and")); // lowercase "and" is a term
+        assert!(matches!(&tokens[1], Token::And));
+        assert!(matches!(&tokens[2], Token::Term(s) if s == "or")); // lowercase "or" is a term
+        assert!(matches!(&tokens[3], Token::Or));
+    }
+
+    // =============================================================================
+    // Parsing Tests
+    // =============================================================================
+
     #[test]
     fn test_parse_single_term() {
         let expr = SearchExpr::parse("error").unwrap();
@@ -508,6 +556,18 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_complex_expression() {
+        // "(a b) OR (c d)" => ((a AND b) OR c) AND d with left-to-right
+        // Actually: "a b OR c d" = ((a AND b) OR c) AND d? Let's verify
+        let expr = SearchExpr::parse("error bash OR write file").unwrap();
+        // "error bash OR write file" parses as: (error AND bash) OR (write AND file)
+        assert!(expr.matches("error in bash")); // left side
+        assert!(expr.matches("write to file")); // right side
+        assert!(!expr.matches("error only"));
+        assert!(!expr.matches("write only"));
+    }
+
+    #[test]
     fn test_case_insensitive() {
         let expr = SearchExpr::parse("Error").unwrap();
         assert!(expr.matches("ERROR"));
@@ -534,6 +594,132 @@ mod tests {
     }
 
     #[test]
+    fn test_only_operators() {
+        // Should handle gracefully
+        assert!(SearchExpr::parse("AND").is_none());
+        assert!(SearchExpr::parse("AND OR").is_none());
+        assert!(SearchExpr::parse("OR AND OR").is_none());
+    }
+
+    // =============================================================================
+    // collect_terms Tests
+    // =============================================================================
+
+    #[test]
+    fn test_collect_terms_single() {
+        let expr = SearchExpr::parse("error").unwrap();
+        let terms = collect_terms(&expr);
+        assert_eq!(terms, vec!["error".to_string()]);
+    }
+
+    #[test]
+    fn test_collect_terms_multiple() {
+        let expr = SearchExpr::parse("error AND warning OR info").unwrap();
+        let terms = collect_terms(&expr);
+        assert_eq!(terms.len(), 3);
+        assert!(terms.contains(&"error".to_string()));
+        assert!(terms.contains(&"warning".to_string()));
+        assert!(terms.contains(&"info".to_string()));
+    }
+
+    // =============================================================================
+    // UTF-8 Boundary Tests
+    // =============================================================================
+
+    #[test]
+    fn test_floor_char_boundary() {
+        let s = "hello";
+        assert_eq!(floor_char_boundary(s, 5), 5);
+        assert_eq!(floor_char_boundary(s, 10), 5);
+        assert_eq!(floor_char_boundary(s, 0), 0);
+        assert_eq!(floor_char_boundary(s, 3), 3);
+    }
+
+    #[test]
+    fn test_ceil_char_boundary() {
+        let s = "hello";
+        assert_eq!(ceil_char_boundary(s, 0), 0);
+        assert_eq!(ceil_char_boundary(s, 3), 3);
+        assert_eq!(ceil_char_boundary(s, 10), 5);
+    }
+
+    // =============================================================================
+    // extract_text_from_json Tests
+    // =============================================================================
+
+    #[test]
+    fn test_extract_text_from_json_user_message() {
+        let line = r#"{"message":{"content":"Hello world"}}"#;
+        let text = extract_text_from_json(line);
+        assert_eq!(text, "Hello world");
+    }
+
+    #[test]
+    fn test_extract_text_from_json_system() {
+        let line = r#"{"content":"System message"}"#;
+        let text = extract_text_from_json(line);
+        assert_eq!(text, "System message");
+    }
+
+    #[test]
+    fn test_extract_text_from_json_summary() {
+        let line = r#"{"summary":"Session summary text"}"#;
+        let text = extract_text_from_json(line);
+        assert_eq!(text, "Session summary text");
+    }
+
+    #[test]
+    fn test_extract_text_from_json_array_content() {
+        let line = r#"{"message":{"content":[{"type":"text","text":"Array text content"}]}}"#;
+        let text = extract_text_from_json(line);
+        assert_eq!(text, "Array text content");
+    }
+
+    #[test]
+    fn test_extract_text_from_json_thinking() {
+        let line = r#"{"message":{"content":[{"type":"thinking","thinking":"Thinking content"}]}}"#;
+        let text = extract_text_from_json(line);
+        assert_eq!(text, "Thinking content");
+    }
+
+    #[test]
+    fn test_extract_text_from_json_invalid() {
+        let line = "not valid json";
+        let text = extract_text_from_json(line);
+        assert_eq!(text, "not valid json"); // Falls back to original line
+    }
+
+    // =============================================================================
+    // Snippet Building Tests
+    // =============================================================================
+
+    #[test]
+    fn test_build_snippet_simple() {
+        let text = "This is a simple error message";
+        let terms = vec!["error".to_string()];
+        let snippet = build_snippet(text, &terms, 50);
+        assert!(snippet.contains("error"));
+    }
+
+    #[test]
+    fn test_build_snippet_truncates_long_text() {
+        let text = "A very long prefix before the error message and a very long suffix after it";
+        let terms = vec!["error".to_string()];
+        let snippet = build_snippet(text, &terms, 10);
+        assert!(snippet.contains("error"));
+        assert!(snippet.len() < text.len());
+    }
+
+    #[test]
+    fn test_build_snippet_adds_ellipsis() {
+        let text = "prefix content error suffix content";
+        let terms = vec!["error".to_string()];
+        let snippet = build_snippet(text, &terms, 5);
+        // Should have ellipsis since we're cutting from middle
+        assert!(snippet.contains("..."));
+    }
+
+    #[test]
     fn test_snippet_multibyte_utf8() {
         // Test that build_snippet handles multi-byte UTF-8 characters without panicking
         // The box-drawing character '─' is 3 bytes (E2 94 80)
@@ -553,5 +739,36 @@ mod tests {
 
         let snippet = build_snippet(text, &terms, 20);
         assert!(snippet.contains("error"));
+    }
+
+    #[test]
+    fn test_snippet_chinese_characters() {
+        // Chinese characters are 3 bytes each
+        let text = "这是一段中文文本 error 更多中文内容";
+        let terms = vec!["error".to_string()];
+        let snippet = build_snippet(text, &terms, 20);
+        assert!(snippet.contains("error"));
+    }
+
+    // =============================================================================
+    // SearchResponse Tests
+    // =============================================================================
+
+    #[test]
+    fn test_search_response_serialization() {
+        let response = SearchResponse {
+            matches: vec![SearchMatch {
+                sequence: 0,
+                byte_offset: 100,
+                snippet: "test snippet".to_string(),
+            }],
+            total_searched: 50,
+            truncated: false,
+        };
+
+        let json = serde_json::to_string(&response).unwrap();
+        assert!(json.contains("\"sequence\":0"));
+        assert!(json.contains("\"byteOffset\":100"));
+        assert!(json.contains("\"totalSearched\":50"));
     }
 }

@@ -22,7 +22,9 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tauri-plugin-opener",
+ "tempfile",
  "urlencoding",
+ "uuid",
 ]
 
 [[package]]

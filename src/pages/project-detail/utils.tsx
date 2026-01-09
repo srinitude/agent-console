@@ -210,6 +210,7 @@ export function formatEventTime(timestamp: string | null): string {
   if (!timestamp) return "";
   try {
     const date = new Date(timestamp);
+    if (isNaN(date.getTime())) return "";
     const year = date.getFullYear();
     const month = (date.getMonth() + 1).toString().padStart(2, "0");
     const day = date.getDate().toString().padStart(2, "0");
