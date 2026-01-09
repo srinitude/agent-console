@@ -41,6 +41,16 @@ Visualize [Cupcake](https://github.com/eqtylab/cupcake) policy evaluations with 
 bun install
 ```
 
+### Install Git Hooks (Recommended)
+
+To automatically clean commit messages of AI attributions:
+
+```bash
+./install-hooks.sh
+```
+
+See [hooks/README.md](hooks/README.md) for more details.
+
 ### Development
 
 ```bash
